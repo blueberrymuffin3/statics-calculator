@@ -186,7 +186,7 @@
 		</div>
 		<div class="column is-third-desktop">
 			<div class="box">
-				<h3 class="is-size-3">Members</h3>
+				<h3 class="is-size-3">Structural Members</h3>
 				<table class="table is-striped is-fullwidth">
 					<thead>
 						<tr>
@@ -198,7 +198,7 @@
 						{#each state.members as member (member.id)}
 							<tr>
 								<td class="space-members">
-									{#each member.jointIds as jointId (jointId)}
+									{#each member.jointIds as jointId}
 										<div class="select is-small">
 											<select bind:value={jointId}>
 												{#each state.joints as joint (joint.id)}
@@ -227,11 +227,15 @@
 						{/each}
 					</tbody>
 				</table>
-				<button
-					class="button"
-					on:click={addMember}
-					disabled={state.joints.length < 2}>Add a member</button
-				>
+				{#if state.joints.length < 2}
+					<button class="button" disabled>
+						Create at least 2 joints first
+					</button>
+				{:else}
+					<button class="button" on:click={addMember}>
+						Add a member
+					</button>
+				{/if}
 			</div>
 		</div>
 	</div>
