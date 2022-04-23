@@ -1,4 +1,5 @@
-import { minmax, State, Vector2 } from "./math";
+import { writable } from "svelte/store";
+import { minmax, Solution, State, Vector2 } from "./math";
 
 export interface RenderContext {
     context: CanvasRenderingContext2D;
@@ -11,10 +12,30 @@ export interface Renderable {
     render(context: RenderContext, viewport: Viewport): void;
 }
 
+const loadImage = (url: string) => {
+    let image = new Image
+    image.onload = () => {
+        console.log("Image Loaded")
+        loadNotifier.update(x => x + 1)
+    }
+    image.src = url;
+    return image
+}
+
+export let loadNotifier = writable(0)
+
 const COLOR_BG = "#274C77";
 const COLOR_GRID = "#6096BA";
 const COLOR_DRAW = "#E7ECEF";
-const padding = 60;
+const COLOR_APPLIED_FORCE = "#BB4430"
+const COLOR_REACTION_FORCE = "#FFA630"
+const IMAGE_FIXED = loadImage("/img/fixed.png");
+const IMAGE_ROLLER = loadImage("/img/roller.png");
+const IMAGE_ROLLER_FLIPPED = loadImage("/img/roller_flipped.png");
+const padding = 100;
+const VECTOR_OFFSET_DIST_TOWARD = 25;
+const VECTOR_OFFSET_DIST_AWAY = 15;
+
 
 type GridGenerator = () => Generator<number, void, undefined>;
 
@@ -91,6 +112,44 @@ const Grid: Renderable = {
     }
 }
 
+class Support implements Renderable {
+    pos: Vector2;
+    x: boolean;
+    y: boolean;
+
+    constructor(pos: Vector2, { x, y }: { x: boolean, y: boolean }) {
+        this.pos = pos;
+        this.x = x;
+        this.y = y;
+    }
+
+    getBoundingPoints(): Vector2[] {
+        return [this.pos];
+    }
+    render({ context }: RenderContext, { pointToScreen }: Viewport): void {
+        let image = null
+        let flipped = false
+        if (this.x && this.y) { image = IMAGE_FIXED }
+        else if (!this.x && this.y) { image = IMAGE_ROLLER }
+        else if (this.x && !this.y) {
+            image = IMAGE_ROLLER_FLIPPED
+            flipped = true
+        }
+
+        if (image) {
+            let screen = pointToScreen(this.pos)
+            if (flipped) {
+                screen.x -= 35
+                screen.y -= 25
+            } else {
+                screen.x -= 25
+                screen.y -= 15
+            }
+            context.drawImage(image, screen.x, screen.y)
+        }
+    }
+}
+
 class LabeledPoint implements Renderable {
     public label: string;
     public pos: Vector2;
@@ -142,6 +201,49 @@ class LineSegment implements Renderable {
     }
 }
 
+class ForceVector implements Renderable {
+    color: string
+    pos: Vector2
+    mag: Vector2
+    private preferredDirection: Vector2 | undefined = undefined
+
+    constructor(color: string, pos: Vector2, mag: Vector2) {
+        this.color = color
+        this.pos = pos
+        this.mag = mag
+    }
+
+    preferDirection(preferredDirection: Vector2) {
+        this.preferredDirection = preferredDirection
+        return this
+    }
+
+    getBoundingPoints(): Vector2[] {
+        return [this.pos]
+    }
+    render({ context }: RenderContext, { pointToScreen }: Viewport): void {
+        const flip = this.preferredDirection && this.preferredDirection.dot(this.mag) < 0;
+        const direction = flip
+            ? new Vector2(this.mag.x, -this.mag.y)
+            : new Vector2(-this.mag.x, this.mag.y);
+
+        let start = pointToScreen(this.pos).plus(direction.withMag(
+            flip ? VECTOR_OFFSET_DIST_AWAY : VECTOR_OFFSET_DIST_TOWARD
+        ))
+        let end = start.plus(direction.scale(0.5)) // TODO: Determine Scale automatically
+        if (flip) {
+            [start, end] = [end, start]
+        }
+
+        context.strokeStyle = this.color;
+        context.lineWidth = 6;
+        context.beginPath();
+        context.moveTo(start.x, start.y);
+        context.lineTo(end.x, end.y);
+        context.stroke();
+    }
+}
+
 const render = (context: RenderContext, objects: Renderable[]) => {
     const points = objects.flatMap(o => o.getBoundingPoints())
     const viewport = new Viewport(points, new Vector2(context.width, context.height))
@@ -149,15 +251,56 @@ const render = (context: RenderContext, objects: Renderable[]) => {
 }
 
 export const renderers = {
-    structure: (context: RenderContext, state: State) => render(context, [
-        Grid,
-        ...state.members
-            .map(member => new LineSegment(
-                member.jointIds
-                    .map(id => state.joints.find(j => j.id == id))
-                    .map(j => j.pos) as [Vector2, Vector2]
-            )),
-        ...state.joints
-            .map(joint => new LabeledPoint(joint.name, joint.pos)),
-    ])
+    blank: (context: RenderContext) => {
+        render(context, [
+            Grid,
+        ])
+    },
+    structure: (context: RenderContext, state: State) => {
+        render(context, [
+            Grid,
+            ...state.members
+                .map(member => new LineSegment(
+                    member.jointIds
+                        .map(id => state.joints.find(j => j.id == id))
+                        .map(j => j.pos) as [Vector2, Vector2]
+                )),
+            ...state.joints
+                .map(joint => new Support(joint.pos, joint.support)),
+            ...state.joints
+                .map(joint => new LabeledPoint(joint.name, joint.pos)),
+        ])
+    },
+    full: (context: RenderContext, state: State, solution: Solution) => {
+        render(context, [
+            Grid,
+            ...state.joints
+                .filter(joint => joint.load.len() > 0)
+                .flatMap(joint => [
+                    new ForceVector(COLOR_APPLIED_FORCE, joint.pos, new Vector2(joint.load.x, 0)),
+                    new ForceVector(COLOR_APPLIED_FORCE, joint.pos, new Vector2(0, joint.load.y))
+                ]),
+            ...state.joints
+                .filter(joint => solution.orf && (joint.support.x || joint.support.y))
+                .flatMap(joint => {
+                    const orf = solution.orf.get(joint.id)
+                    return [
+                        new ForceVector(COLOR_REACTION_FORCE, joint.pos, new Vector2(orf.x, 0))
+                            .preferDirection(new Vector2(1, 0)),
+                        new ForceVector(COLOR_REACTION_FORCE, joint.pos, new Vector2(0, orf.y))
+                            .preferDirection(new Vector2(0, 1)),
+                    ]
+                }),
+            ...state.joints
+                .map(joint => new LabeledPoint(joint.name, joint.pos)),
+        ])
+    },
+    joint: (context: RenderContext, state: State, solution: Solution, jointId: number) => {
+        render(context, [
+            Grid,
+            ...state.joints
+                .filter(j => j.id == jointId)
+                .map(joint => new LabeledPoint(joint.name, joint.pos)),
+        ])
+    },
 }

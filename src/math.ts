@@ -1,3 +1,5 @@
+import Matrix, { inverse } from "ml-matrix";
+
 export class Vector2 {
     public x: number;
     public y: number;
@@ -9,6 +11,28 @@ export class Vector2 {
 
     public plus(other: Vector2): Vector2 {
         return new Vector2(this.x + other.x, this.y + other.y)
+    }
+
+    public dot(other: Vector2): number {
+        return this.x * other.x + this.y * other.y
+    }
+
+    public cross(other: Vector2): number {
+        return this.x * other.y - this.y * other.x
+    }
+
+    public len(): number {
+        return Math.sqrt(this.x * this.x + this.y * this.y)
+    }
+
+    public withMag(mag: number): Vector2 {
+        const factor = mag / this.len();
+        if (isNaN(factor)) { return new Vector2(0, 0) }
+        return this.scale(factor);
+    }
+
+    public scale(factor: number): Vector2 {
+        return new Vector2(this.x * factor, this.y * factor);
     }
 
     public toString(): string {
@@ -34,6 +58,17 @@ export interface Member {
     jointIds: [number, number];
 }
 
+export interface Problem {
+    message: string,
+    critical: boolean,
+    fix?: () => State
+}
+
+export interface Solution {
+    problems: Problem[];
+    orf?: Map<number, Vector2>;
+}
+
 export const minmax = <T>(items: T[], mapper: (item: T) => number) => {
     const values = items.map(mapper);
     if (values.length > 0) {
@@ -46,16 +81,10 @@ export const minmax = <T>(items: T[], mapper: (item: T) => number) => {
     }
 };
 
-interface Problem {
-    message: string,
-    critical: boolean,
-    fix?: () => State
-}
-
 const isSane = (state: State): Problem[] => {
     if (state.members.length == 0) {
         return [{
-            message: "No strucural members exist",
+            message: "No structural members exist",
             critical: true
         }]
     }
@@ -113,13 +142,13 @@ const isSane = (state: State): Problem[] => {
 
     if (problems.length > 0) return problems
     // Stage 2
-    // Static Determicity (heuristic)
+    // Static Determinism (heuristic)
     const J = state.joints.length
     const M = state.members.length
     const R = state.joints.flatMap(joint => [joint.support.x, joint.support.y]).filter(x => x).length
     if (2 * J != M + R) {
         problems.push({
-            message: `Structure is not statically determinent (J=${J}, M=${M}, R=${R})`,
+            message: `Structure is not statically determinate (J=${J}, M=${M}, R=${R})`,
             critical: true,
         })
     }
@@ -127,9 +156,105 @@ const isSane = (state: State): Problem[] => {
     return problems
 }
 
-export const solve = (state: State) => {
-    const problems = isSane(state);
-    if (problems.length > 0) return { problems };
+interface Equation {
+    terms: Map<string, number>;
+    constant: number
+}
 
-    return {};
+const solveSystemOfEquations = (equations: Equation[]): Map<string, number> | null => {
+    const variableNames = Array.from(new Set(
+        equations.flatMap(equation => [...equation.terms.keys()])
+    ))
+
+    // A*X=B
+    let A = new Matrix(equations.map(equation => {
+        let values = new Array(variableNames.length).fill(0)
+
+        for (const [variable, coeff] of equation.terms) {
+            values[variableNames.indexOf(variable)] = coeff
+        }
+
+        return values
+    }))
+    let B = new Matrix(equations.map(equation => [-equation.constant]))
+
+    let A1: Matrix
+
+    try {
+        A1 = inverse(A)
+    } catch (error) {
+        return null // Matrix is singular
+    }
+
+    let X = A1.mmul(B)
+    return new Map(X.to1DArray()
+        .map((value, i) => [variableNames[i], value])
+    )
+}
+
+const solveORF = (state: State): Map<number, Vector2> | null => {
+    // Moment about (0, 0)
+    let moment: Equation = {
+        terms: new Map(),
+        constant: 0
+    }
+    let forcesX: Equation = {
+        terms: new Map(),
+        constant: 0
+    }
+    let forcesY: Equation = {
+        terms: new Map(),
+        constant: 0
+    }
+    for (const joint of state.joints) {
+        moment.constant += joint.pos.cross(joint.load)
+        forcesX.constant += joint.load.x
+        forcesY.constant += joint.load.y
+        if (joint.support.x) {
+            moment.terms.set(joint.id + '_x', joint.pos.cross(new Vector2(1, 0)))
+            forcesX.terms.set(joint.id + '_x', 1)
+        }
+        if (joint.support.y) {
+            moment.terms.set(joint.id + '_y', joint.pos.cross(new Vector2(0, 1)))
+            forcesY.terms.set(joint.id + '_y', 1)
+        }
+    }
+
+    const solution = solveSystemOfEquations([moment, forcesX, forcesY])
+    if (solution === null) {
+        return null
+    }
+
+    const ORF = new Map<number, Vector2>()
+
+    for (const joint of state.joints) {
+        ORF.set(joint.id, new Vector2(0, 0))
+    }
+
+    for (const [name, value] of solution.entries()) {
+        const [id, axis] = name.split('_')
+        const vec = ORF.get(parseInt(id))
+        vec[axis] = value
+    }
+
+    return ORF
+}
+
+export const solve = (state: State): Solution => {
+    const problems = isSane(state);
+    if (problems.find(problem => problem.critical) !== undefined) return { problems };
+
+    const orf = solveORF(state)
+    if (orf === null) {
+        problems.push({
+            message: `Structure is not statically determinate (ORF matrix is singular)`,
+            critical: true,
+        })
+        return { problems }
+    }
+
+    return {
+        problems,
+        orf
+    };
 }

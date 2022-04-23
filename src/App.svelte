@@ -4,12 +4,13 @@
 	import Icon from "mdi-svelte";
 	import { mdiDeleteOutline } from "@mdi/js";
 	import { solve, State, Vector2 } from "./math";
-	import { renderers } from "./render";
+	import { loadNotifier, renderers } from "./render";
+	import { writable } from "svelte/store";
 
 	export const defaultJointNames = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-	export let canvasWidth = 640;
-	export let canvasHeight = 320;
-	export let renderMode = "structure";
+	export let canvasWidth = 600;
+	export let canvasHeight = 500;
+	export let renderMode = "full";
 
 	let nextId = 0;
 
@@ -27,13 +28,13 @@
 				name: "B",
 				pos: new Vector2(10, 0),
 				load: new Vector2(0, 0),
-				support: { x: true, y: false },
+				support: { x: false, y: true },
 			},
 			{
 				id: nextId++,
 				name: "C",
 				pos: new Vector2(5, 5),
-				load: new Vector2(0, -10),
+				load: new Vector2(0, -100),
 				support: { x: false, y: false },
 			},
 		],
@@ -52,8 +53,6 @@
 			},
 		],
 	};
-
-	console.log(state);
 
 	export const removeJoint = (id: number) => {
 		state.joints = state.joints.filter((joint) => joint.id != id);
@@ -86,7 +85,20 @@
 	};
 
 	$: solution = solve(state);
-	$: render = (context: any) => renderers.structure(context, state);
+	$: render = (context: any) => {
+		$loadNotifier;
+		if (renderMode == "structure") {
+			renderers.structure(context, state);
+		} else if (renderMode == "full") {
+			renderers.full(context, state, solution);
+		} else if (renderMode.startsWith("joint")) {
+			const jointId = parseInt(renderMode.substring(5));
+			console.log(jointId);
+			renderers.joint(context, state, solution, jointId);
+		} else {
+			renderers.blank(context)
+		}
+	};
 </script>
 
 <main class="container">
@@ -99,7 +111,7 @@
 				<option value="structure">Structure</option>
 				<option value="full">Full Free Body Diagram</option>
 				{#each state.joints as joint (joint.id)}
-					<option value={`joint-${joint.id}`}
+					<option value={`joint${joint.id}`}
 						>Free Body Diagram for Joint {joint.name}</option
 					>
 				{/each}
@@ -238,10 +250,6 @@
 				{/if}
 			</div>
 		</div>
-	</div>
-	<div class="box">
-		<h3 class="is-size-3">Solution</h3>
-		<pre>{JSON.stringify(solution, null, 3)}</pre>
 	</div>
 </main>
 
