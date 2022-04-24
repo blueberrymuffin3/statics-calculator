@@ -48,7 +48,7 @@ export class Vector2 {
     }
 
     public toString(): string {
-        return `(${this.x}, ${this.y})`
+        return `(${this.x.toLocaleString()}, ${this.y.toLocaleString()})`
     }
 }
 
@@ -79,6 +79,7 @@ export interface Problem {
 export interface Solution {
     problems: Problem[];
     orf?: Map<number, Vector2>;
+    memberForces?: Map<number, number>;
 }
 
 export const minmax = <T>(items: T[], mapper: (item: T) => number) => {
@@ -121,7 +122,7 @@ const isSane = (state: State): Problem[] => {
 
     const reusedPoints = new Map<string, Joint>()
     for (const joint of state.joints) {
-        const key = joint.pos.toString()
+        const key = joint.pos.x + '_' + joint.pos.y
         if (reusedPoints.has(key)) {
             problems.push({
                 message: `Joints ${reusedPoints.get(key).name} and ${joint.name} overlap`,
@@ -252,6 +253,44 @@ const solveORF = (state: State): Map<number, Vector2> | null => {
     return ORF
 }
 
+
+const solveMembers = (state: State, orf: Map<number, Vector2>): Map<number, number> | null => {
+    let jointLUT = new Map(
+        state.joints.map(joint => [joint.id, joint])
+    )
+    let membersForJoint = new Map<number, Member[]>(
+        state.joints.map(joint => [joint.id, []])
+    )
+    for (const member of state.members) {
+        for (const jointId of member.jointIds) {
+            membersForJoint.get(jointId).push(member);
+        }
+    }
+
+    const equations = new Array<Equation>()
+    for (const joint of state.joints) {
+        for (const axis of ['x', 'y']) {
+            let terms = new Map<string, number>()
+            let constant = 0
+            constant += joint.load[axis]
+            if (orf.has(joint.id)) {
+                constant += orf.get(joint.id)[axis]
+            }
+            for (const member of membersForJoint.get(joint.id)) {
+                const other = jointLUT.get(member.jointIds.find(j => j != joint.id))
+                const coeff = other.pos.minus(joint.pos).withMag(1)[axis]
+                terms.set(member.id.toString(), coeff)
+            }
+            equations.push({ terms, constant })
+        }
+    }
+
+    return new Map(
+        [...solveSystemOfEquations(equations).entries()]
+            .map(([id, val]) => [parseInt(id), val])
+    );
+}
+
 export const solve = (state: State): Solution => {
     const problems = isSane(state);
     if (problems.find(problem => problem.critical) !== undefined) return { problems };
@@ -259,14 +298,24 @@ export const solve = (state: State): Solution => {
     const orf = solveORF(state)
     if (orf === null) {
         problems.push({
-            message: `Structure is not statically determinate (ORF matrix is singular)`,
+            message: `Structure is not statically determinate (could not solve for outside reaction forces)`,
             critical: true,
         })
         return { problems }
     }
 
+    const memberForces = solveMembers(state, orf)
+    if (memberForces === null) {
+        problems.push({
+            message: `Structure is not statically determinate (could not solve for member forces)`,
+            critical: true,
+        })
+        return { problems, orf }
+    }
+
     return {
         problems,
-        orf
+        orf,
+        memberForces
     };
 }

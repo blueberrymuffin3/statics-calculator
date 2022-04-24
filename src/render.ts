@@ -209,6 +209,25 @@ class LineSegment implements Renderable {
     }
 }
 
+const drawArrow = (context: CanvasRenderingContext2D, start: Vector2, end: Vector2, color: string) => {
+    const direction = end.minus(start)
+
+    context.strokeStyle = color;
+    context.lineWidth = 6;
+    context.beginPath();
+    context.moveTo(start.x, start.y);
+    context.lineTo(end.x, end.y);
+    context.stroke();
+
+
+    context.fillStyle = color;
+    context.beginPath();
+    context.moveTo(...start.plus(direction.perp().withMag(10)).asArr())
+    context.lineTo(...start.minus(direction.withMag(12)).asArr())
+    context.lineTo(...start.minus(direction.perp().withMag(10)).asArr())
+    context.fill()
+}
+
 class ForceVector implements Renderable {
     color: string
     pos: Vector2
@@ -249,23 +268,7 @@ class ForceVector implements Renderable {
             [start, end] = [end, start]
         }
 
-        context.strokeStyle = this.color;
-        context.lineWidth = 6;
-        context.beginPath();
-        context.moveTo(start.x, start.y);
-        context.lineTo(end.x, end.y);
-        context.stroke();
-
-        context.fillStyle = this.color;
-        context.beginPath();
-        context.moveTo(...start.plus(direction.perp().withMag(10)).asArr())
-        if (flip) {
-            context.lineTo(...start.plus(direction.withMag(12)).asArr())
-        } else {
-            context.lineTo(...start.minus(direction.withMag(12)).asArr())
-        }
-        context.lineTo(...start.minus(direction.perp().withMag(10)).asArr())
-        context.fill()
+        drawArrow(context, start, end, this.color)
     }
 }
 
