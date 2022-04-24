@@ -10,6 +10,7 @@ export interface RenderContext {
 export interface Renderable {
     getBoundingPoints(): Vector2[];
     render(context: RenderContext, viewport: Viewport): void;
+    getForceVectorLength?: () => number
 }
 
 const loadImage = (url: string) => {
@@ -41,6 +42,8 @@ type GridGenerator = () => Generator<number, void, undefined>;
 
 class Viewport {
     public pointToScreen: (coord: Vector2) => Vector2;
+    public scaleToScreen: (value: number) => number;
+    public centerPoint: Vector2;
     gridGenerators: { x: GridGenerator; y: GridGenerator; };
 
     constructor(points: Vector2[], size: Vector2) {
@@ -60,11 +63,14 @@ class Viewport {
         const transform = (value: number, center: number, range: number) =>
             ((value - center) / pixelRange) + (range / 2) + padding
 
+        this.scaleToScreen = (value: number) => value / pixelRange;
+
         this.pointToScreen = (coord: Vector2): Vector2 => new Vector2(
             transform(coord.x, centerx, screenRange.x),
             transform(-coord.y, centery, screenRange.y),
         )
 
+        this.centerPoint = new Vector2(centerx, -centery)
 
         const createGridGenerator = (center: number, range: number): GridGenerator => {
             const centerDist = (range / 2 + padding) * pixelRange;
@@ -85,9 +91,11 @@ class Viewport {
 
 const Grid: Renderable = {
     getBoundingPoints: () => [],
-    render: ({ context, width, height }, { gridGenerators, pointToScreen }) => {
+    render: ({ context, width, height }, { gridGenerators, pointToScreen, scaleToScreen }) => {
         context.fillStyle = COLOR_BG;
         context.fillRect(0, 0, width, height);
+
+        if (scaleToScreen(1) < 5) return;
 
         context.strokeStyle = COLOR_GRID;
         context.lineWidth = 0.4;
@@ -218,11 +226,17 @@ class ForceVector implements Renderable {
         return this
     }
 
+    getForceVectorLength(): number {
+        return this.mag.len()
+    }
+
     getBoundingPoints(): Vector2[] {
         return [this.pos]
     }
-    render({ context }: RenderContext, { pointToScreen }: Viewport): void {
-        const flip = this.preferredDirection && this.preferredDirection.dot(this.mag) < 0;
+
+    render({ context }: RenderContext, { pointToScreen, centerPoint }: Viewport): void {
+        let preferredDirection = this.preferredDirection ?? centerPoint.minus(this.pos)
+        const flip = preferredDirection.dot(this.mag) < 0;
         const direction = flip
             ? new Vector2(this.mag.x, -this.mag.y)
             : new Vector2(-this.mag.x, this.mag.y);
@@ -230,7 +244,7 @@ class ForceVector implements Renderable {
         let start = pointToScreen(this.pos).plus(direction.withMag(
             flip ? VECTOR_OFFSET_DIST_AWAY : VECTOR_OFFSET_DIST_TOWARD
         ))
-        let end = start.plus(direction.scale(0.5)) // TODO: Determine Scale automatically
+        let end = start.plus(direction.scale(0.1)) // TODO: Determine Scale automatically
         if (flip) {
             [start, end] = [end, start]
         }
@@ -241,6 +255,17 @@ class ForceVector implements Renderable {
         context.moveTo(start.x, start.y);
         context.lineTo(end.x, end.y);
         context.stroke();
+
+        context.fillStyle = this.color;
+        context.beginPath();
+        context.moveTo(...start.plus(direction.perp().withMag(10)).asArr())
+        if (flip) {
+            context.lineTo(...start.plus(direction.withMag(12)).asArr())
+        } else {
+            context.lineTo(...start.minus(direction.withMag(12)).asArr())
+        }
+        context.lineTo(...start.minus(direction.perp().withMag(10)).asArr())
+        context.fill()
     }
 }
 
@@ -285,10 +310,8 @@ export const renderers = {
                 .flatMap(joint => {
                     const orf = solution.orf.get(joint.id)
                     return [
-                        new ForceVector(COLOR_REACTION_FORCE, joint.pos, new Vector2(orf.x, 0))
-                            .preferDirection(new Vector2(1, 0)),
-                        new ForceVector(COLOR_REACTION_FORCE, joint.pos, new Vector2(0, orf.y))
-                            .preferDirection(new Vector2(0, 1)),
+                        new ForceVector(COLOR_REACTION_FORCE, joint.pos, new Vector2(orf.x, 0)),
+                        new ForceVector(COLOR_REACTION_FORCE, joint.pos, new Vector2(0, orf.y)),
                     ]
                 }),
             ...state.joints

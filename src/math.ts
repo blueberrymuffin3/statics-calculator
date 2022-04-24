@@ -13,6 +13,10 @@ export class Vector2 {
         return new Vector2(this.x + other.x, this.y + other.y)
     }
 
+    public minus(other: Vector2): Vector2 {
+        return new Vector2(this.x - other.x, this.y - other.y)
+    }
+
     public dot(other: Vector2): number {
         return this.x * other.x + this.y * other.y
     }
@@ -33,6 +37,14 @@ export class Vector2 {
 
     public scale(factor: number): Vector2 {
         return new Vector2(this.x * factor, this.y * factor);
+    }
+
+    public perp(): Vector2 {
+        return new Vector2(-this.y, this.x);
+    }
+
+    public asArr(): [number, number] {
+        return [this.x, this.y]
     }
 
     public toString(): string {

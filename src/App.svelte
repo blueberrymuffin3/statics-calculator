@@ -5,7 +5,7 @@
 	import { mdiDeleteOutline } from "@mdi/js";
 	import { solve, State, Vector2 } from "./math";
 	import { loadNotifier, renderers } from "./render";
-	import { writable } from "svelte/store";
+	import { DEFAULT_TRUSS } from "./defaultTruss";
 
 	export const defaultJointNames = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 	export let canvasWidth = 600;
@@ -14,45 +14,7 @@
 
 	let nextId = 0;
 
-	export let state: State = {
-		joints: [
-			{
-				id: nextId++,
-				name: "A",
-				pos: new Vector2(0, 0),
-				load: new Vector2(0, 0),
-				support: { x: true, y: true },
-			},
-			{
-				id: nextId++,
-				name: "B",
-				pos: new Vector2(10, 0),
-				load: new Vector2(0, 0),
-				support: { x: false, y: true },
-			},
-			{
-				id: nextId++,
-				name: "C",
-				pos: new Vector2(5, 5),
-				load: new Vector2(0, -100),
-				support: { x: false, y: false },
-			},
-		],
-		members: [
-			{
-				id: nextId++,
-				jointIds: [0, 1],
-			},
-			{
-				id: nextId++,
-				jointIds: [1, 2],
-			},
-			{
-				id: nextId++,
-				jointIds: [0, 2],
-			},
-		],
-	};
+	export let state: State = DEFAULT_TRUSS;
 
 	export const removeJoint = (id: number) => {
 		state.joints = state.joints.filter((joint) => joint.id != id);
@@ -96,7 +58,7 @@
 			console.log(jointId);
 			renderers.joint(context, state, solution, jointId);
 		} else {
-			renderers.blank(context)
+			renderers.blank(context);
 		}
 	};
 </script>
