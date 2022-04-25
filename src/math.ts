@@ -133,6 +133,20 @@ const isSane = (state: State): Problem[] => {
         }
     }
 
+    for (const member of state.members) {
+        if(member.jointIds[0] === member.jointIds[1]){
+            const name = state.joints.find(j => j.id == member.jointIds[0]).name
+            problems.push({
+                message: `Invalid member exists on joint ${name}`,
+                critical: true,
+                fix: () => ({
+                    joints: state.joints,
+                    members: state.members.filter(m => m.id != member.id),
+                })
+            })
+        }
+    }
+
     const duplicateMembers = new Set<string>()
     for (const member of state.members) {
         const key = [...member.jointIds].sort().join('_')

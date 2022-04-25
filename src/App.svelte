@@ -91,7 +91,7 @@
 								class="button is-small"
 								on:click={() => (state = problem.fix())}
 							>
-								Fix
+								Delete
 							</button>
 						{/if}
 					</div>
