@@ -15,10 +15,7 @@ export interface Renderable {
 
 const loadImage = (url: string) => {
     let image = new Image
-    image.onload = () => {
-        console.log("Image Loaded")
-        loadNotifier.update(x => x + 1)
-    }
+    image.onload = () => loadNotifier.update(x => x + 1)
     image.src = url;
     return image
 }
@@ -28,15 +25,18 @@ export let loadNotifier = writable(0)
 const COLOR_BG = "#274C77";
 const COLOR_GRID = "#6096BA";
 const COLOR_DRAW = "#E7ECEF";
-const COLOR_APPLIED_FORCE = "#BB4430"
+const COLOR_APPLIED_FORCE = "#FC5130"
 const COLOR_REACTION_FORCE = "#FFA630"
+const COLOR_COMPRESSION = "#49D673";
+const COLOR_TENSION = "#D56049";
 const IMAGE_FIXED = loadImage("/img/fixed.png");
 const IMAGE_ROLLER = loadImage("/img/roller.png");
 const IMAGE_ROLLER_FLIPPED = loadImage("/img/roller_flipped.png");
-const padding = 100;
-const VECTOR_OFFSET_DIST_TOWARD = 25;
-const VECTOR_OFFSET_DIST_AWAY = 15;
-
+const padding = 45;
+const VECTOR_OFFSET_DIST_TOWARD = 35;
+const VECTOR_OFFSET_DIST_AWAY = 25;
+const MAX_DYNAMIC_LENGTH = 1.5;
+const EPSILON = 1e-6;
 
 type GridGenerator = () => Generator<number, void, undefined>;
 
@@ -201,7 +201,7 @@ class LineSegment implements Renderable {
         const screenPoints = this.points.map(pointToScreen)
 
         context.strokeStyle = COLOR_DRAW;
-        context.lineWidth = 3;
+        context.lineWidth = 6;
         context.beginPath();
         context.moveTo(screenPoints[0].x, screenPoints[0].y);
         context.lineTo(screenPoints[1].x, screenPoints[1].y);
@@ -228,11 +228,29 @@ const drawArrow = (context: CanvasRenderingContext2D, start: Vector2, end: Vecto
     context.fill()
 }
 
+class DynamicLengthSet {
+    maxMag: number
+
+    constructor() {
+        this.maxMag = 0
+    }
+
+    add(mag: number) {
+        this.maxMag = Math.max(mag, this.maxMag)
+    }
+
+    scale(mag: number): number {
+        return mag / this.maxMag * MAX_DYNAMIC_LENGTH;
+    }
+}
+
 class ForceVector implements Renderable {
     color: string
     pos: Vector2
     mag: Vector2
-    private preferredDirection: Vector2 | undefined = undefined
+    preferredDirection: Vector2 | undefined = undefined
+    private length: number | undefined = undefined
+    private dynamicLengthSet: DynamicLengthSet | undefined = undefined
 
     constructor(color: string, pos: Vector2, mag: Vector2) {
         this.color = color
@@ -245,15 +263,35 @@ class ForceVector implements Renderable {
         return this
     }
 
+    setLength(length: number) {
+        this.length = length
+        return this
+    }
+
+    dynamicLength(dynamicLengthSet: DynamicLengthSet) {
+        dynamicLengthSet.add(this.mag.len())
+        this.dynamicLengthSet = dynamicLengthSet
+        return this
+    }
+
     getForceVectorLength(): number {
         return this.mag.len()
     }
 
     getBoundingPoints(): Vector2[] {
-        return [this.pos]
+        let length = this.length ?? this.dynamicLengthSet.scale(this.mag.len())
+        if (length) {
+            let ret = [
+                this.pos.plus((this.preferredDirection ?? this.mag).withMag(length)),
+                this.pos.minus((this.preferredDirection ?? this.mag).withMag(length)),
+            ]
+            return ret
+        } else {
+            return [this.pos]
+        }
     }
 
-    render({ context }: RenderContext, { pointToScreen, centerPoint }: Viewport): void {
+    render({ context }: RenderContext, { pointToScreen, centerPoint, scaleToScreen }: Viewport): void {
         let preferredDirection = this.preferredDirection ?? centerPoint.minus(this.pos)
         const flip = preferredDirection.dot(this.mag) < 0;
         const direction = flip
@@ -263,12 +301,68 @@ class ForceVector implements Renderable {
         let start = pointToScreen(this.pos).plus(direction.withMag(
             flip ? VECTOR_OFFSET_DIST_AWAY : VECTOR_OFFSET_DIST_TOWARD
         ))
-        let end = start.plus(direction.scale(0.1)) // TODO: Determine Scale automatically
+        let end: Vector2
+
+        if (this.length) {
+            end = start.plus(direction.withMag(
+                scaleToScreen(this.length) - VECTOR_OFFSET_DIST_AWAY - VECTOR_OFFSET_DIST_TOWARD
+            ))
+        } else if (this.dynamicLengthSet) {
+            end = start.plus(direction.withMag(
+                scaleToScreen(this.dynamicLengthSet.scale(this.mag.len()))
+            ))
+        } else {
+            end = start.plus(direction.scale(0.1))
+        }
+
         if (flip) {
             [start, end] = [end, start]
         }
 
         drawArrow(context, start, end, this.color)
+    }
+}
+
+class LineSegmentLoaded implements Renderable {
+    public points: [Vector2, Vector2];
+    public load: number;
+    private children: Renderable[];
+
+    constructor(points: [Vector2, Vector2], load: number) {
+        this.points = points;
+        this.load = load;
+
+        if (Math.abs(load) < EPSILON) {
+            this.children = [new LineSegment(points)]
+        } else {
+            const midpoint = points[0].plus(points[1]).scale(0.5)
+            const color = this.load < 0 ? COLOR_COMPRESSION : COLOR_TENSION
+            this.children = [...points.map(pos => {
+                const direction = pos.minus(midpoint)
+                const mag = direction.withMag(-this.load)
+                return new ForceVector(color, pos, mag)
+                    .preferDirection(direction)
+                    .setLength(direction.len())
+            }), {
+                getBoundingPoints: () => [],
+                render: ({ context }, { pointToScreen }) => {
+                    let { x, y } = pointToScreen(midpoint)
+                    context.fillStyle = color;
+                    context.textAlign = 'center';
+                    context.textBaseline = 'middle';
+                    context.font = '16px sans-serif';
+                    context.fillText(Math.abs(this.load).toLocaleString(), x, y, 48)
+                }
+            }]
+        }
+    }
+
+    getBoundingPoints(): Vector2[] {
+        return this.points;
+    }
+
+    render(context: RenderContext, viewport: Viewport): void {
+        this.children.forEach(v => v.render(context, viewport))
     }
 }
 
@@ -300,21 +394,34 @@ export const renderers = {
         ])
     },
     full: (context: RenderContext, state: State, solution: Solution) => {
+        let dynamicLengthSet = new DynamicLengthSet()
         render(context, [
             Grid,
+            ...state.members
+                .filter(() => solution.memberForces)
+                .map(member => new LineSegmentLoaded(
+                    member.jointIds
+                        .map(id => state.joints.find(j => j.id == id))
+                        .map(j => j.pos) as [Vector2, Vector2],
+                    solution.memberForces.get(member.id)
+                )),
             ...state.joints
                 .filter(joint => joint.load.len() > 0)
                 .flatMap(joint => [
-                    new ForceVector(COLOR_APPLIED_FORCE, joint.pos, new Vector2(joint.load.x, 0)),
+                    new ForceVector(COLOR_APPLIED_FORCE, joint.pos, new Vector2(joint.load.x, 0))
+                        .dynamicLength(dynamicLengthSet),
                     new ForceVector(COLOR_APPLIED_FORCE, joint.pos, new Vector2(0, joint.load.y))
+                        .dynamicLength(dynamicLengthSet),
                 ]),
             ...state.joints
                 .filter(joint => solution.orf && (joint.support.x || joint.support.y))
                 .flatMap(joint => {
                     const orf = solution.orf.get(joint.id)
                     return [
-                        new ForceVector(COLOR_REACTION_FORCE, joint.pos, new Vector2(orf.x, 0)),
-                        new ForceVector(COLOR_REACTION_FORCE, joint.pos, new Vector2(0, orf.y)),
+                        new ForceVector(COLOR_REACTION_FORCE, joint.pos, new Vector2(orf.x, 0))
+                            .dynamicLength(dynamicLengthSet),
+                        new ForceVector(COLOR_REACTION_FORCE, joint.pos, new Vector2(0, orf.y))
+                            .dynamicLength(dynamicLengthSet),
                     ]
                 }),
             ...state.joints

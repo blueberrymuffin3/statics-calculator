@@ -72,11 +72,11 @@
 			<select bind:value={renderMode}>
 				<option value="structure">Structure</option>
 				<option value="full">Full Free Body Diagram</option>
-				{#each state.joints as joint (joint.id)}
+				<!-- {#each state.joints as joint (joint.id)}
 					<option value={`joint${joint.id}`}>
 						Free Body Diagram for Joint {joint.name}
 					</option>
-				{/each}
+				{/each} -->
 			</select>
 		</div>
 		{#if solution.problems.length > 0}
@@ -280,18 +280,6 @@
 		display: flex;
 		align-items: center;
 		gap: 16px;
-	}
-
-	/* Chrome, Safari, Edge, Opera */
-	input::-webkit-outer-spin-button,
-	input::-webkit-inner-spin-button {
-		-webkit-appearance: none;
-		margin: 0;
-	}
-
-	/* Firefox */
-	input[type="number"] {
-		-moz-appearance: textfield;
 	}
 
 	input[type="number"],
