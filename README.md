@@ -8,5 +8,6 @@ This tool was created using [TypeScript](https://www.typescriptlang.org/) and [S
 
 ## Development
 You can open a development environment for this project in one click using GitPod. Feature requests and PR's are welcome.
+
 [![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/gitpod-io/template-sveltejs)
 
