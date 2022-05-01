@@ -22,13 +22,13 @@ const loadImage = (url: string) => {
 
 export let loadNotifier = writable(0)
 
-const COLOR_BG = "#274C77";
-const COLOR_GRID = "#6096BA";
-const COLOR_DRAW = "#E7ECEF";
-const COLOR_APPLIED_FORCE = "#FC5130"
-const COLOR_REACTION_FORCE = "#FFA630"
-const COLOR_COMPRESSION = "#49D673";
-const COLOR_TENSION = "#D56049";
+export const COLOR_BG = "#274C77";
+export const COLOR_GRID = "#6096BA";
+export const COLOR_DRAW = "#E7ECEF";
+export const COLOR_APPLIED_FORCE = "#FC5130"
+export const COLOR_REACTION_FORCE = "#FFA630"
+export const COLOR_COMPRESSION = "#49D673";
+export const COLOR_TENSION = "#D56049";
 const IMAGE_FIXED = loadImage("/img/fixed.png");
 const IMAGE_ROLLER = loadImage("/img/roller.png");
 const IMAGE_ROLLER_FLIPPED = loadImage("/img/roller_flipped.png");
