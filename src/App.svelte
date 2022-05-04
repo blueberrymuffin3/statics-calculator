@@ -118,19 +118,19 @@
 				<br />
 				Use the
 				<a href="#canvas" on:click={() => (renderMode = "full")}> Full Free Body Diagram </a> view to preview the direction and magnitude of your
-				<span style={`color: ${COLOR_APPLIED_FORCE}`}>applied loads</span><Icon path={mdiArrowDownBold} color={COLOR_APPLIED_FORCE} />
+				<span style:color={COLOR_APPLIED_FORCE}>applied loads</span><Icon path={mdiArrowDownBold} color={COLOR_APPLIED_FORCE} />
 				. If your structure is statically determinate, the
-				<span style={`color: ${COLOR_REACTION_FORCE}`}>outside reaction forces</span><Icon path={mdiArrowUpBold} color={COLOR_REACTION_FORCE} />
+				<span style:color={COLOR_REACTION_FORCE}>outside reaction forces</span><Icon path={mdiArrowUpBold} color={COLOR_REACTION_FORCE} />
 				will also be calculated and displayed, along with the forces acting on each member that is under
 				<span class="nobr">
-					<Icon path={mdiArrowRightBold} color={COLOR_TENSION} /><span style={`color: ${COLOR_TENSION}`}>tension</span><Icon
+					<Icon path={mdiArrowRightBold} color={COLOR_TENSION} /><span style:color={COLOR_TENSION}>tension</span><Icon
 						path={mdiArrowLeftBold}
 						color={COLOR_TENSION}
 					/>
 				</span>
 				or
 				<span class="nobr">
-					<Icon path={mdiArrowLeftBold} color={COLOR_COMPRESSION} /><span style={`color: ${COLOR_COMPRESSION}`}>compression</span><Icon
+					<Icon path={mdiArrowLeftBold} color={COLOR_COMPRESSION} /><span style:color={COLOR_COMPRESSION}>compression</span><Icon
 						path={mdiArrowRightBold}
 						color={COLOR_COMPRESSION}
 					/>
