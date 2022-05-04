@@ -12,9 +12,9 @@
 	export let canvasHeight = 500;
 	export let renderMode = "full";
 
-	let nextId = 0;
-
 	export let state: State = DEFAULT_TRUSS;
+
+	let nextId = Math.max(...state.joints.map((joint) => joint.id), ...state.members.map((member) => member.id)) + 1;
 
 	export const removeJoint = (id: number) => {
 		state.joints = state.joints.filter((joint) => joint.id != id);
@@ -22,9 +22,16 @@
 	};
 
 	export const addJoint = () => {
+		let name: string;
+		for (name of defaultJointNames) {
+			if (state.joints.findIndex((joint) => joint.name == name) == -1) {
+				break;
+			}
+		}
+
 		state.joints.push({
 			id: nextId++,
-			name: defaultJointNames[state.joints.length],
+			name,
 			pos: new Vector2(-2, 2),
 			load: new Vector2(0, 0),
 			support: { x: false, y: false },
