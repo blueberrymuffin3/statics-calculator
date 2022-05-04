@@ -306,6 +306,7 @@
 
 	#canvas {
 		padding: 8px;
+		overflow: hidden;
 	}
 
 	#canvas > div.select {
