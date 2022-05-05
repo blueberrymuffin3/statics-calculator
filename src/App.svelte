@@ -11,7 +11,7 @@
     mdiDeleteOutline,
     mdiGithub,
   } from "@mdi/js";
-  import { solve, State, Vector2 } from "./math";
+  import { parseState, solve, State, Vector2 } from "./math";
   import {
     COLOR_APPLIED_FORCE,
     COLOR_COMPRESSION,
@@ -20,6 +20,7 @@
     loadNotifier,
     renderers,
   } from "./render";
+  import throttle from "lodash.throttle";
   import { DEFAULT_TRUSS } from "./defaultTruss";
 
   export const defaultJointNames = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
@@ -27,13 +28,27 @@
   export let canvasHeight = 500;
   export let renderMode = "full";
 
-  export let state: State = DEFAULT_TRUSS;
-
-  let nextId =
+  const calcNextId = () =>
     Math.max(
+      0,
       ...state.joints.map((joint) => joint.id),
       ...state.members.map((member) => member.id)
     ) + 1;
+
+  const LSState = localStorage.getItem("state");
+  let state = (LSState && parseState(LSState)) || parseState(DEFAULT_TRUSS);
+  let nextId = calcNextId();
+
+  const reset = () => {
+    state = parseState(DEFAULT_TRUSS);
+    nextId = calcNextId();
+  };
+
+  const saveState = throttle((state: State) => {
+    localStorage.setItem("state", JSON.stringify(state));
+  }, 500);
+  // Auto save to localStorage
+  $: state && saveState(state);
 
   export const removeJoint = (id: number) => {
     state.joints = state.joints.filter((joint) => joint.id != id);
@@ -192,19 +207,27 @@
     <Canvas width={canvasWidth - 16} height={canvasHeight}>
       <Layer {render} />
     </Canvas>
-    <div class="select is-small">
-      <select bind:value={renderMode}>
-        <option value="structure">Structure</option>
-        <option value="full">Full Free Body Diagram</option>
-        <!-- {#each state.joints as joint (joint.id)}
+    <aside id="menu">
+      <div class="select is-small">
+        <select bind:value={renderMode}>
+          <option value="structure">Structure</option>
+          <option value="full">Full Free Body Diagram</option>
+          <!-- {#each state.joints as joint (joint.id)}
 					<option value={`joint${joint.id}`}>
 						Free Body Diagram for Joint {joint.name}
 					</option>
 				{/each} -->
-      </select>
-    </div>
+        </select>
+      </div>
+      <button class="button is-small is-danger" on:click={reset}>
+        <span class="icon">
+          <Icon path={mdiDeleteOutline} />
+        </span>
+        <span>Reset</span>
+      </button>
+    </aside>
     {#if solution.problems.length > 0}
-      <div class="box" id="problems">
+      <aside class="box" id="problems">
         {#each solution.problems as problem}
           <div>
             <Icon path={mdiAlertCircleOutline} />
@@ -220,7 +243,7 @@
             {/if}
           </div>
         {/each}
-      </div>
+      </aside>
     {/if}
   </div>
   <div class="box" id="joints">
@@ -399,7 +422,7 @@
     overflow: hidden;
   }
 
-  #canvas > div.select {
+  #menu {
     position: absolute;
     top: 16px;
     left: 16px;

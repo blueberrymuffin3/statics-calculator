@@ -72,6 +72,107 @@ export interface Member {
   jointIds: [number, number];
 }
 
+export function parseState(json: string): State | null {
+  let stateObject;
+  try {
+    stateObject = JSON.parse(json);
+  } catch (error) {
+    return null;
+  }
+
+  const { joints: jointsObject, members: membersObject } = stateObject;
+
+  if (!Array.isArray(jointsObject) || !Array.isArray(membersObject)) {
+    return null;
+  }
+
+  const joints = jointsObject.map(parseJoint);
+  const members = membersObject.map(parseMember);
+  if (joints.includes(null) || members.includes(null)) {
+    return null;
+  }
+
+  const jointIds = new Set();
+  for (const joint of joints) {
+    if (jointIds.has(joint.id)) {
+      return null;
+    } else {
+      jointIds.add(joint.id);
+    }
+  }
+
+  const memberIds = new Set();
+  for (const member of members) {
+    if (
+      jointIds.has(member.id) ||
+      memberIds.has(member.id) ||
+      !(jointIds.has(member.jointIds[0]) && jointIds.has(member.jointIds[1]))
+    ) {
+      return null;
+    } else {
+      memberIds.add(member.id);
+    }
+  }
+
+  return { joints, members };
+}
+
+function parseJoint(jointObject: any): Joint | null {
+  const { id, name, pos, load, support } = jointObject;
+  const posVec = parseVector2(pos);
+  const loadVec = parseVector2(load);
+  if (
+    typeof id != "number" ||
+    typeof name != "string" ||
+    !posVec ||
+    !loadVec ||
+    typeof support != "object"
+  ) {
+    return null;
+  }
+
+  const { x, y } = support;
+  if (typeof x != "boolean" || typeof y != "boolean") {
+    return null;
+  }
+
+  return {
+    id,
+    name,
+    pos: posVec,
+    load: loadVec,
+    support: { x, y },
+  };
+}
+
+function parseMember(jointObject: any): Member | null {
+  const { id, jointIds } = jointObject;
+
+  if (
+    typeof id != "number" ||
+    !Array.isArray(jointIds) ||
+    jointIds.length != 2
+  ) {
+    return null;
+  }
+
+  const [jointA, jointB] = jointIds;
+  if (typeof jointA != "number" || typeof jointB != "number") {
+    return null;
+  }
+
+  return { id, jointIds: [jointA, jointB] };
+}
+
+function parseVector2(jointObject: any): Vector2 | null {
+  const { x, y } = jointObject;
+  if (typeof x != "number" || typeof y != "number") {
+    return null;
+  }
+
+  return new Vector2(x, y);
+}
+
 export interface Problem {
   message: string;
   critical: boolean;
