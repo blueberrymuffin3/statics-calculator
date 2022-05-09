@@ -1,4 +1,12 @@
-import Matrix, { inverse } from "ml-matrix";
+import Matrix, { inverse, IToStringOptions } from "ml-matrix";
+
+const matrixToStringOpts: IToStringOptions = {
+  maxColumns: 25,
+  maxRows: 25,
+  maxNumSize: 10,
+};
+
+const subscript = { x: "ₓ", y: "ᵧ" };
 
 export class Vector2 {
   public x: number;
@@ -183,6 +191,7 @@ export interface Solution {
   problems: Problem[];
   orf?: Map<number, Vector2>;
   memberForces?: Map<number, number>;
+  debug: string;
 }
 
 export const minmax = <T>(items: T[], mapper: (item: T) => number) => {
@@ -292,14 +301,31 @@ const isSane = (state: State): Problem[] => {
   return problems;
 };
 
+type TermMap = Map<string, { coeff: number; debug: string }>;
+
 interface Equation {
-  terms: Map<string, number>;
+  terms: TermMap;
   constant: number;
 }
 
 const solveSystemOfEquations = (
   equations: Equation[]
-): Map<string, number> | null => {
+): { solution: Map<string, number> | null; debug: string } => {
+  let debug = equations.map((equation) => {
+    let str = [...equation.terms.values()]
+      .filter((x) => x.coeff != 0)
+      .map(({ coeff, debug }) => {
+        return coeff.toLocaleString() + "*" + debug;
+      })
+      .join(" + ");
+
+    if (equation.constant != 0) {
+      str += ` + ${equation.constant.toLocaleString()}`;
+    }
+
+    return `${str} = 0`;
+  });
+
   const variableNames = Array.from(
     new Set(equations.flatMap((equation) => [...equation.terms.keys()]))
   );
@@ -309,7 +335,7 @@ const solveSystemOfEquations = (
     equations.map((equation) => {
       let values = new Array(variableNames.length).fill(0);
 
-      for (const [variable, coeff] of equation.terms) {
+      for (const [variable, { coeff }] of equation.terms) {
         values[variableNames.indexOf(variable)] = coeff;
       }
 
@@ -317,20 +343,35 @@ const solveSystemOfEquations = (
     })
   );
   let B = new Matrix(equations.map((equation) => [-equation.constant]));
+  debug.push("A = " + A.toString(matrixToStringOpts));
+  debug.push("B = " + B.toString(matrixToStringOpts));
 
   let A1: Matrix;
 
   try {
     A1 = inverse(A);
+    debug.push("A⁻¹ = " + A1.toString(matrixToStringOpts));
   } catch (error) {
-    return null; // Matrix is singular
+    return {
+      solution: null,
+      debug: `${A.toString(matrixToStringOpts)}\n${B.toString(
+        matrixToStringOpts
+      )}`,
+    }; // Matrix is singular
   }
 
   let X = A1.mmul(B);
-  return new Map(X.to1DArray().map((value, i) => [variableNames[i], value]));
+  debug.push("X = " + X.toString(matrixToStringOpts));
+  const solution = new Map(
+    X.to1DArray().map((value, i) => [variableNames[i], value])
+  );
+  return {
+    solution,
+    debug: debug.join("\n"),
+  };
 };
 
-const solveORF = (state: State): Map<number, Vector2> | null => {
+const solveORF = (state: State) => {
   // Moment about (0, 0)
   let moment: Equation = {
     terms: new Map(),
@@ -349,39 +390,51 @@ const solveORF = (state: State): Map<number, Vector2> | null => {
     forcesX.constant += joint.load.x;
     forcesY.constant += joint.load.y;
     if (joint.support.x) {
-      moment.terms.set(joint.id + "_x", joint.pos.cross(new Vector2(1, 0)));
-      forcesX.terms.set(joint.id + "_x", 1);
+      const debug = joint.name + subscript["y"];
+      moment.terms.set(joint.id + "_x", {
+        coeff: joint.pos.cross(new Vector2(1, 0)),
+        debug,
+      });
+      forcesX.terms.set(joint.id + "_x", { coeff: 1, debug });
     }
     if (joint.support.y) {
-      moment.terms.set(joint.id + "_y", joint.pos.cross(new Vector2(0, 1)));
-      forcesY.terms.set(joint.id + "_y", 1);
+      const debug = joint.name + subscript["y"];
+      moment.terms.set(joint.id + "_y", {
+        coeff: joint.pos.cross(new Vector2(0, 1)),
+        debug,
+      });
+      forcesY.terms.set(joint.id + "_y", { coeff: 1, debug });
     }
   }
 
-  const solution = solveSystemOfEquations([moment, forcesX, forcesY]);
+  const { solution, debug } = solveSystemOfEquations([
+    moment,
+    forcesX,
+    forcesY,
+  ]);
   if (solution === null) {
-    return null;
+    return { orf: null, debug: "" };
   }
 
-  const ORF = new Map<number, Vector2>();
+  const orf = new Map<number, Vector2>();
 
   for (const joint of state.joints) {
-    ORF.set(joint.id, new Vector2(0, 0));
+    orf.set(joint.id, new Vector2(0, 0));
   }
 
   for (const [name, value] of solution.entries()) {
     const [id, axis] = name.split("_");
-    const vec = ORF.get(parseInt(id));
+    const vec = orf.get(parseInt(id));
     vec[axis] = value;
   }
 
-  return ORF;
+  return { orf, debug };
 };
 
 const solveMembers = (
   state: State,
   orf: Map<number, Vector2>
-): Map<number, number> | null => {
+): { solution: Map<number, number> | null; debug: string } => {
   let jointLUT = new Map(state.joints.map((joint) => [joint.id, joint]));
   let membersForJoint = new Map<number, Member[]>(
     state.joints.map((joint) => [joint.id, []])
@@ -395,7 +448,7 @@ const solveMembers = (
   const equations = new Array<Equation>();
   for (const joint of state.joints) {
     for (const axis of ["x", "y"]) {
-      let terms = new Map<string, number>();
+      let terms: TermMap = new Map();
       let constant = 0;
       constant += joint.load[axis];
       if (orf.has(joint.id)) {
@@ -404,46 +457,78 @@ const solveMembers = (
       for (const member of membersForJoint.get(joint.id)) {
         const other = jointLUT.get(member.jointIds.find((j) => j != joint.id));
         const coeff = other.pos.minus(joint.pos).withMag(1)[axis];
-        terms.set(member.id.toString(), coeff);
+        terms.set(member.id.toString(), {
+          coeff,
+          debug:
+            member.jointIds
+              .map((id) => jointLUT.get(id))
+              .map((joint) => joint.name)
+              .join("") + subscript[axis],
+        });
       }
       equations.push({ terms, constant });
     }
   }
 
-  return new Map(
-    [...solveSystemOfEquations(equations).entries()].map(([id, val]) => [
-      parseInt(id),
-      val,
-    ])
-  );
+  let { solution, debug } = solveSystemOfEquations(equations);
+
+  debug += "\n\nMembers:\n";
+  for (const member of state.members) {
+    for (const jointIds of [member.jointIds, [...member.jointIds].reverse()]) {
+      const name = jointIds
+        .map((id) => jointLUT.get(id))
+        .map((joint) => joint.name)
+        .join("");
+      debug += `${name} = ${jointLUT.get(jointIds[1]).pos.minus(jointLUT.get(jointIds[0]).pos)}\n`
+      debug += `${name}^ = ${jointLUT.get(jointIds[1]).pos.minus(jointLUT.get(jointIds[0]).pos).withMag(1)}\n`
+    }
+  }
+
+  if (!solution) {
+    return { solution: null, debug };
+  }
+
+  return {
+    solution: new Map(
+      [...solution.entries()].map(([id, val]) => [parseInt(id), val])
+    ),
+    debug,
+  };
 };
 
 export const solve = (state: State): Solution => {
   const problems = isSane(state);
+  let debug = "";
   if (problems.find((problem) => problem.critical) !== undefined)
-    return { problems };
+    return { problems, debug };
 
-  const orf = solveORF(state);
+  const { orf, debug: debugORF } = solveORF(state);
+  debug += `Outside Reaction Forces:\n${debugORF}\n\n`;
   if (orf === null) {
     problems.push({
       message: `Structure is not statically determinate (could not solve for outside reaction forces)`,
       critical: true,
     });
-    return { problems };
+    return { problems, debug };
   }
 
-  const memberForces = solveMembers(state, orf);
+  const { solution: memberForces, debug: debugMembers } = solveMembers(
+    state,
+    orf
+  );
+  debug += `Member Forces:\n${debugMembers}\n\n`;
   if (memberForces === null) {
     problems.push({
       message: `Structure is not statically determinate (could not solve for member forces)`,
       critical: true,
     });
-    return { problems, orf };
+    return { problems, orf, debug };
   }
 
   return {
     problems,
     orf,
     memberForces,
+    debug,
   };
 };

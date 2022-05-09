@@ -386,6 +386,12 @@
       <button class="button" on:click={addMember}> Add a member </button>
     {/if}
   </div>
+  <div class="box" id="debug">
+    <h3 class="is-size-3">Debug Info</h3>
+    <pre>
+{solution.debug}
+    </pre>
+  </div>
   <footer class="box">
     Created by Jack Gordon, source code is available on
     <Icon path={mdiGithub} />
