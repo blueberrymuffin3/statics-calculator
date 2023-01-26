@@ -393,7 +393,7 @@
     </pre>
   </div>
   <footer class="box">
-    Created by Jack Gordon, source code is available on
+    Created by Evelyn Gordon, source code is available on
     <Icon path={mdiGithub} />
     <a
       href="http://github.com/bmxguy100/statics-calculator"
