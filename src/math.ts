@@ -390,7 +390,7 @@ const solveORF = (state: State) => {
     forcesX.constant += joint.load.x;
     forcesY.constant += joint.load.y;
     if (joint.support.x) {
-      const debug = joint.name + subscript["y"];
+      const debug = joint.name + subscript["x"];
       moment.terms.set(joint.id + "_x", {
         coeff: joint.pos.cross(new Vector2(1, 0)),
         debug,
